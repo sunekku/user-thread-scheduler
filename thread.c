@@ -1,27 +1,10 @@
+#define _GNU_SOURCE
+
 #include <assert.h>
 #include <stdlib.h>
 #include <ucontext.h>
 #include "thread.h"
-#include "interrupt.h"
-
-enum state{READY, RUNNING, BLOCKED};
-
-typedef struct Thread{
-    Tid tid;
-    enum state t_state;
-    void *sp;
-    ucontext_t t_context;
-}Thread;
-
-typedef struct t_queue{
-    Thread thread;
-    struct t_queue next;
-}T_queue;
-
-typedef struct w_queue{
-    T_queue *f;
-    T_queue *r;
-}W_queue;
+#include "scheduler.h"
 
 T_queue *dequeue(T_queue **qfrnt, T_queue **qrear, Tid tid){
     if(*qfrnt == NULL) return NULL;
@@ -45,7 +28,7 @@ T_queue *dequeue(T_queue **qfrnt, T_queue **qrear, Tid tid){
 }
 
 /*make sure the return is even necessary*/
-Tid enqueue(T_queue **qfrnt, T_queue *qrear, T_queue *new){
+Tid enqueue(T_queue **qfrnt, T_queue **qrear, T_queue *new){
     if(!(*qfrnt)){
         *qfrnt = new;
         *qrear = new;
@@ -68,7 +51,7 @@ Tid avail_id[THREAD_MAX_THREADS];
 int numKT; //number of killed threads
  
 
-void kill(){
+void tkill(){
     while(kill_f){
         /*if(!(kill_f -> thread).tid){
             kill_f = kill_f -> next;
@@ -129,7 +112,7 @@ Tid thread_create(void (*f)(void *), void *parg){
     if(!ncontext.uc_stack.ss_sp){
         free(new);
         interrupts_set(enable); 
-        return THREAD_NOMEMORY
+        return THREAD_NOMEMORY;
     }
     ncontext.uc_stack.ss_size = THREAD_MIN_STACK;
     unsigned long int stack = (unsigned long int)ncontext.uc_stack.ss_sp + THREAD_MIN_STACK; //may need fix
@@ -148,7 +131,7 @@ Tid thread_create(void (*f)(void *), void *parg){
     (new -> thread).t_state = READY;
     (new -> thread).t_context = ncontext;
     (new -> thread).sp = ncontext.uc_stack.ss_sp;
-    (new -> thread).next = NULL;
+    new -> next = NULL;
     enqueue(&ready_f, &ready_r, new);
     interrupts_set(enable); 
     return (new -> thread).tid;
@@ -157,7 +140,7 @@ Tid thread_create(void (*f)(void *), void *parg){
 /*fix interrupts*/
 Tid thread_yield(Tid want_tid){
     int enable = interrupts_set(0); 
-    kill();
+    tkill();
     volatile int swp = 0; 
     if(want_tid == THREAD_ANY){
         if(!ready_f){
@@ -196,7 +179,7 @@ Tid thread_yield(Tid want_tid){
 /* check return */
 Tid thread_exit(){
     int enable = interrupts_set(0); 
-    kill();
+    tkill();
     if(!ready_f){
         interrupts_set(enable);
         return THREAD_NONE;
@@ -208,7 +191,6 @@ Tid thread_exit(){
     int err = getcontext(&curr);
     assert(!err);
     (t_curr -> thread).t_context = curr;
-    (t_curr -> thread).t_state = EXITED;
     (t_run -> thread).t_state = RUNNING;
     enqueue(&kill_f, &kill_r, t_curr);
     t_curr = t_run;
@@ -219,7 +201,7 @@ Tid thread_exit(){
 
 Tid thread_kill(Tid tid){
     int enable = interrupts_set(0);
-    kill();
+    tkill();
     T_queue *t_kill = dequeue(&ready_f, &ready_r, tid);
     if(!t_kill) return THREAD_INVALID;
     free((t_kill -> thread).sp);
@@ -272,12 +254,12 @@ Tid thread_sleep(W_queue *q){
 
 int thread_wakeup(W_queue *q, int all){
     int enable = interrupts_set(0);
-    if(!q || !(queue -> front)){
+    if(!q || !(q -> f)){
         interrupts_set(enable);
         return 0;
     }
     if(!all){
-        T_queue *t_run = dequeue(&(q -> f), &(q -> r), (queue -> f).tid);
+        T_queue *t_run = dequeue(&(q -> f), &(q -> r), (q -> f -> thread).tid);
         t_run -> next = NULL;
         (t_run -> thread).t_state = READY;
         enqueue(&ready_f, &ready_r, t_run);
@@ -286,7 +268,7 @@ int thread_wakeup(W_queue *q, int all){
     }else{
         int i = 0;
         while(q -> f){
-            T_queue *t_run = dequeue(&(q -> f), &(q -> r), (queue -> f).tid);
+            T_queue *t_run = dequeue(&(q -> f), &(q -> r), (q -> f -> thread).tid);
             t_run -> next = NULL;
             (t_run -> thread).t_state = READY;
             enqueue(&ready_f, &ready_r, t_run);
@@ -297,11 +279,7 @@ int thread_wakeup(W_queue *q, int all){
     }
 }
 
-struct W_queue *queue;
-
-typedef struct Lock{
-    int state;
-}Lock;
+W_queue *queue;
 
 int tset(Lock *lock){
     int enable = interrupts_set(0);
@@ -311,7 +289,7 @@ int tset(Lock *lock){
     return prev;
 }
 
-Lock lock_create(){
+Lock *lock_create(){
     Lock *lock = malloc(sizeof(Lock));
     assert(lock);
     lock -> state = 0;
@@ -337,10 +315,6 @@ void lock_release(Lock *lock){
     lock -> state = 0;
     thread_wakeup(queue, 0);
 }
-
-typedef struct CV{
-    W_queue *wq;
-}CV;
 
 CV *cv_create(){
     CV *cv = malloc(sizeof(CV));

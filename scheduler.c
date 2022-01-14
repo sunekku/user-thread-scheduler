@@ -7,7 +7,7 @@
 #include <sys/time.h>
 #include <stdarg.h>
 #include "thread.h"
-#include "interrupt.h"
+#include "scheduler.h"
 
 static void interrupt_handler(int sig, siginfo_t * sip, void *contextVP);
 static void set_interrupt();

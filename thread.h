@@ -1,6 +1,8 @@
 #ifndef _THREAD_H_
 #define _THREAD_H_
 
+#include <ucontext.h>
+
 typedef int Tid;
 #define THREAD_MAX_THREADS 1024
 #define THREAD_MIN_STACK 32768
@@ -14,6 +16,33 @@ enum { THREAD_ANY = -1,
 	THREAD_FAILED = -7
 };
 
+enum state{READY, RUNNING, BLOCKED};
+
+typedef struct Thread{
+    Tid tid;
+    enum state t_state;
+    void *sp;
+    ucontext_t t_context;
+}Thread;
+
+typedef struct t_queue{
+    Thread thread;
+    struct t_queue *next;
+}T_queue;
+
+typedef struct w_queue{
+    T_queue *f;
+    T_queue *r;
+}W_queue;
+
+typedef struct Lock{
+    int state;
+}Lock;
+
+typedef struct CV{
+    W_queue *wq;
+}CV;
+
 static inline int
 thread_ret_ok(Tid ret)
 {
@@ -26,18 +55,18 @@ Tid thread_create(void (*fn) (void *), void *arg);
 Tid thread_yield(Tid tid);
 Tid thread_exit();
 Tid thread_kill(Tid tid);
-struct wait_queue *wait_queue_create();
-void wait_queue_destroy(struct wait_queue *wq);
-Tid thread_sleep(struct wait_queue *queue);
-int thread_wakeup(struct wait_queue *queue, int all);
-struct lock *lock_create();
-void lock_destroy(struct lock *lock);
-void lock_acquire(struct lock *lock);
-void lock_release(struct lock *lock);
-struct cv *cv_create();
-void cv_destroy(struct cv *cv);
-void cv_wait(struct cv *cv, struct lock *lock);
-void cv_signal(struct cv *cv, struct lock *lock);
-void cv_broadcast(struct cv *cv, struct lock *lock);
+W_queue *wait_queue_create();
+void wait_queue_destroy(W_queue *wq);
+Tid thread_sleep(W_queue *queue);
+int thread_wakeup(W_queue *queue, int all);
+Lock *lock_create();
+void lock_destroy(Lock *lock);
+void lock_acquire(Lock *lock);
+void lock_release(Lock *lock);
+CV *cv_create();
+void cv_destroy(CV *cv);
+void cv_wait(CV *cv, Lock *lock);
+void cv_signal(CV *cv, Lock *lock);
+void cv_broadcast(CV *cv, Lock *lock);
 
 #endif

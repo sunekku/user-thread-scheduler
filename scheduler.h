@@ -1,5 +1,5 @@
-#ifndef _INTERRUPT_H_
-#define _INTERRUPT_H_
+#ifndef _SCHEDULER_H_
+#define _SCHEDULER_H_
 
 #include <stdio.h>
 #include <signal.h>
