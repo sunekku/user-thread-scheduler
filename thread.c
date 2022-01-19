@@ -7,6 +7,7 @@
 #include "scheduler.h"
 
 T_queue *dequeue(T_queue **qfrnt, T_queue **qrear, Tid tid){
+    
     if(*qfrnt == NULL) return NULL;
     T_queue *curr = *qfrnt;
     T_queue *prev = NULL;
@@ -27,7 +28,6 @@ T_queue *dequeue(T_queue **qfrnt, T_queue **qrear, Tid tid){
     return NULL;
 }
 
-/*make sure the return is even necessary*/
 Tid enqueue(T_queue **qfrnt, T_queue **qrear, T_queue *new){
     if(!(*qfrnt)){
         *qfrnt = new;
@@ -50,14 +50,11 @@ T_queue *kill_r;
 Tid avail_id[THREAD_MAX_THREADS];
 int numKT; //number of killed threads
  
-
+/*we dont check for main cuz it doesnt even end up here*/
 void tkill(){
     while(kill_f){
-        /*if(!(kill_f -> thread).tid){
-            kill_f = kill_f -> next;
-            continue;
-        }*/
         T_queue *t = dequeue(&kill_f, &kill_r, (kill_f -> thread).tid);
+        //printf("check %d\n", (t -> thread).tid);
         free((t -> thread).sp);
         avail_id[numKT] = (t -> thread).tid;
         numKT++;
@@ -111,12 +108,12 @@ Tid thread_create(void (*f)(void *), void *parg){
     ncontext.uc_stack.ss_sp = malloc(THREAD_MIN_STACK); //see if this even necessary
     if(!ncontext.uc_stack.ss_sp){
         free(new);
-        interrupts_set(enable); 
+        interrupts_set(enable);
         return THREAD_NOMEMORY;
     }
     ncontext.uc_stack.ss_size = THREAD_MIN_STACK;
-    unsigned long int stack = (unsigned long int)ncontext.uc_stack.ss_sp + THREAD_MIN_STACK; //may need fix
-    stack = (stack & -16L) - 8; //may need fix
+    unsigned long int stack = (unsigned long int)ncontext.uc_stack.ss_sp + THREAD_MIN_STACK;
+    stack = (stack & -16L) - 8;
     ncontext.uc_mcontext.gregs[REG_RSP] = stack;
     ncontext.uc_mcontext.gregs[REG_RIP] = (unsigned long int)thread_stub;
     ncontext.uc_mcontext.gregs[REG_RDI] = (unsigned long int)f;
@@ -152,12 +149,12 @@ Tid thread_yield(Tid want_tid){
         interrupts_set(enable); 
         return thread_id();
     }
-    T_queue *t_run = dequeue(&ready_f, &ready_f, want_tid);
+    T_queue *t_run = dequeue(&ready_f, &ready_r, want_tid);
     if(!t_run){
         interrupts_set(enable); 
         return THREAD_INVALID;
     }
-    //t_run -> next = NULL; 
+    
     ucontext_t curr;
     int err = getcontext(&curr);
     assert(!err);
@@ -169,7 +166,6 @@ Tid thread_yield(Tid want_tid){
         enqueue(&ready_f, &ready_r, t_curr);
         (t_run -> thread).t_state = RUNNING;
         t_curr = t_run;
-
         setcontext(&((t_curr -> thread).t_context));
     }
     interrupts_set(enable);
@@ -186,12 +182,13 @@ Tid thread_exit(){
     }
     T_queue *t_run = dequeue(&ready_f, &ready_r, (ready_f -> thread).tid);
     Tid cid = thread_id();
-    //t_run -> next = NULL;
-    ucontext_t curr;
-    int err = getcontext(&curr);
-    assert(!err);
-    (t_curr -> thread).t_context = curr;
     (t_run -> thread).t_state = RUNNING;
+    if(cid == 0){
+         for(int i = 0; i < 5000; i++)
+            printf("stop\n");
+
+    }
+    t_curr -> next = NULL;  
     enqueue(&kill_f, &kill_r, t_curr);
     t_curr = t_run;
     setcontext(&((t_curr -> thread).t_context));
@@ -204,6 +201,7 @@ Tid thread_kill(Tid tid){
     tkill();
     T_queue *t_kill = dequeue(&ready_f, &ready_r, tid);
     if(!t_kill) return THREAD_INVALID;
+    printf("check %d\n", tid);
     free((t_kill -> thread).sp);
     avail_id[numKT] = (t_kill -> thread).tid;
     numKT++;
